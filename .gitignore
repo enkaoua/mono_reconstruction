@@ -1,0 +1,12 @@
+.Ds_Store
+
+data/
+
+__pycache__/
+af-sfmlearner/
+
+results/
+
+LTRL/splits/
+
+*.png
