@@ -48,14 +48,23 @@ class MonoDataset(data.Dataset):
                 ):
         super(MonoDataset, self).__init__()
 
+        # camera intrinsics- either load from path or pre-set intrinsics
         if len(camera_intrinsics_pth) > 0:
             self.K = np.loadtxt(camera_intrinsics_pth)
+            # TODO scale with original height and width
+            #self.K[0,:] /= width
+            #self.K[1,:] /= height
+
         else:
-            self.K = np.array([[0.82, 0, 0.5, 0],
+            """ self.K = np.array([[0.82, 0, 0.5, 0],
                             [0, 1.02, 0.5, 0],
                             [0, 0, 1, 0],
-                            [0, 0, 0, 1]], dtype=np.float32)
+                            [0, 0, 0, 1]], dtype=np.float64) """
+            self.K =  np.array([[0.82, 0, 0.5],
+                            [0, 1.02, 0.5],
+                            [0, 0, 1]], dtype=np.float64)
         self.data_path = data_path
+        # files to reconstruct
         self.filenames =  sorted(glob.glob(f'{self.data_path}/*{img_ext}'))
         self.height = height
         self.width = width
