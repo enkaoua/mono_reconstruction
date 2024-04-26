@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 
 from collections import OrderedDict
-from LTRL.layers import *
+from layers import *
 
 
 class DepthDecoder(nn.Module):

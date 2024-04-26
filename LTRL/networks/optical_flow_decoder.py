@@ -6,7 +6,7 @@ import torch.nn as nn
 
 from torch.distributions.normal import Normal
 from collections import OrderedDict
-from LTRL.layers import *
+from layers import *
 
 
 class PositionDecoder(nn.Module):

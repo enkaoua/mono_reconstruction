@@ -54,6 +54,12 @@ class MonoDataset(data.Dataset):
             # TODO scale with original height and width
             #self.K[0,:] /= width
             #self.K[1,:] /= height
+            self.K[0,:] /= self.K[0,2]
+            self.K[1,:] /= self.K[1,2]
+            # multiply by new h and w
+            self.K[0,:] *= width/2
+            self.K[1,:] *= height/2
+
 
         else:
             """ self.K = np.array([[0.82, 0, 0.5, 0],

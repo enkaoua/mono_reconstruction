@@ -6,13 +6,13 @@ import datasets
 import networks
 import numpy as np
 import torch.optim as optim
+import torch.nn as nn
 
 from utils import *
 from layers import *
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 
-splits_dir = os.path.join(os.path.dirname(__file__), "splits")
 
 class Trainer:
     def __init__(self, options):
@@ -27,7 +27,7 @@ class Trainer:
         self.parameters_to_train = []  # 列表
         self.parameters_to_train_0 = []
 
-        self.device = torch.device("cpu" if self.opt.no_cuda else "cuda")
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.num_scales = len(self.opt.scales)  # 4
         self.num_input_frames = len(self.opt.frame_ids)  # 3
@@ -41,10 +41,10 @@ class Trainer:
             self.opt.frame_ids.append("s")
 
         self.models["encoder"] = networks.ResnetEncoder(
-        self.opt.num_layers, self.opt.weights_init == "pretrained")  # 18
+            self.opt.num_layers, self.opt.weights_init == "pretrained")  # 18
         self.models["encoder"].to(self.device)
         self.parameters_to_train += list(self.models["encoder"].parameters())
-            
+
         self.models["depth"] = networks.DepthDecoder(
             self.models["encoder"].num_ch_enc, self.opt.scales)
         self.models["depth"].to(self.device)
@@ -123,35 +123,41 @@ class Trainer:
         print("Training is using:\n  ", self.device)
 
         # data
-        datasets_dict = {"endovis": datasets.SCAREDRAWDataset}
+        datasets_dict = {"endovis": datasets.SCAREDRAWDataset, "endonasal": datasets.EndonasalDataset}
         self.dataset = datasets_dict[self.opt.dataset]
 
-        fpath = os.path.join(os.path.dirname(__file__), "splits", self.opt.split, "{}_files.txt")
-        train_filenames = readlines(fpath.format("train"))
-        val_filenames = readlines(fpath.format("val"))
-        test_filenames = readlines(fpath.format("test"))
-        img_ext = '.png'  
+        if self.opt.dataset == "endonasal":
+            print('Preparing endonasal dataloader.')
+            seqs_train = ['rec_1_endo', 'rec_2_endo', 'rec_10_endo', 'rec_8_endo', 'rec_9_endo']
+            seqs_val = ['rec_3_endo', 'rec_11_endo']
+            train_dataset = self.dataset(
+                self.opt.data_path, seqs_train, self.opt.height, self.opt.width, self.opt.frame_ids, 4, is_train=True)
+            val_dataset = self.dataset(
+                self.opt.data_path, seqs_val, self.opt.height, self.opt.width, self.opt.frame_ids, 4, is_train=False)
+            
+            num_train_samples = len(train_dataset)
+        else:
+            
+            fpath = os.path.join(os.path.dirname(__file__), "splits", self.opt.split, "{}_files.txt")
+            train_filenames = readlines(fpath.format("train"))
+            val_filenames = readlines(fpath.format("val"))
+            img_ext = '.png'  
 
-        num_train_samples = len(train_filenames)
-        self.num_total_steps = num_train_samples // self.opt.batch_size * self.opt.num_epochs
-        
-        train_dataset = self.dataset(
-            self.opt.data_path, train_filenames, self.opt.height, self.opt.width,
-            self.opt.frame_ids, 4, is_train=True, img_ext=img_ext)
+            num_train_samples = len(train_filenames)
+
+            train_dataset = self.dataset(
+                self.opt.data_path, train_filenames, self.opt.height, self.opt.width,
+                self.opt.frame_ids, 4, is_train=True, img_ext=img_ext)
+            val_dataset = self.dataset(
+                self.opt.data_path, val_filenames, self.opt.height, self.opt.width,
+                self.opt.frame_ids, 4, is_train=False, img_ext=img_ext)
+
+        self.num_total_steps = num_train_samples // self.opt.batch_size * self.opt.num_epochs    
         self.train_loader = DataLoader(
             train_dataset, self.opt.batch_size, True,
-            num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
-        val_dataset = self.dataset(
-            self.opt.data_path, val_filenames, self.opt.height, self.opt.width,
-            self.opt.frame_ids, 4, is_train=False, img_ext=img_ext)
+            num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)      
         self.val_loader = DataLoader(
             val_dataset, self.opt.batch_size, False,
-            num_workers=1, pin_memory=True, drop_last=True)
-        test_dataset = self.dataset(
-            self.opt.data_path, test_filenames, self.opt.height, self.opt.width,
-            self.opt.frame_ids, 4, is_train=False, img_ext=img_ext)
-        self.test_loader = DataLoader(
-            test_dataset, 1, False,
             num_workers=1, pin_memory=True, drop_last=True)
         self.val_iter = iter(self.val_loader)
 
@@ -190,14 +196,11 @@ class Trainer:
             self.position_depth[scale].to(self.device)
 
         self.depth_metric_names = [
-            "de/abs_rel", "de/sq_rel", "de/rmse", "de/log_rmse", "da/a1", "da/a2", "da/a3"]
+            "de/abs_rel", "de/sq_rel", "de/rms", "de/log_rms", "da/a1", "da/a2", "da/a3"]
 
-        gt_path = os.path.join(splits_dir, self.opt.eval_split, "gt_depths.npz")
-        self.gt_depths = np.load(gt_path, fix_imports=True, encoding='latin1')["data"]
-        
-        print("Using split:\n  ", self.opt.split)
-        print("There are {:d} training items, {:d} validation items and {:d} testing items\n".format(
-            len(train_dataset), len(val_dataset), len(test_dataset)))
+        print("Using split:\n  ", self.opt.dataset)
+        print("There are {:d} training items and {:d} validation items\n".format(
+            len(train_dataset), len(val_dataset)))
 
         self.save_opts()
 
@@ -281,17 +284,8 @@ class Trainer:
         self.start_time = time.time()
         for self.epoch in range(self.opt.num_epochs):
             self.run_epoch()
-            if self.epoch == 0:
-                rmse = self.run_epoch_eval()
+            if (self.epoch + 1) % self.opt.save_frequency == 0:
                 self.save_model()
-            else:
-                rmse_new = self.run_epoch_eval()
-                if rmse_new < rmse:
-                    rmse = rmse_new
-                    self.save_model()
-
-            # if (self.epoch + 1) % self.opt.save_frequency == 0:
-            #     self.save_model()
 
     def run_epoch(self):
         """Run a single epoch of training and validation
@@ -316,7 +310,7 @@ class Trainer:
             self.model_optimizer.zero_grad()
             losses["loss"].backward()
             self.model_optimizer.step()
-            
+
             duration = time.time() - before_op_time
 
             phase = batch_idx % self.opt.log_frequency == 0
@@ -325,82 +319,19 @@ class Trainer:
 
                 self.log_time(batch_idx, duration, losses["loss"].cpu().data)
                 self.log("train", inputs, outputs, losses)
-                self.val()
+                # self.val()
 
             self.step += 1
             
         self.model_lr_scheduler.step()
         self.model_lr_scheduler_0.step()
 
-    def run_epoch_eval(self):
-        """Run a single epoch of evaluation
-        """
-
-        print("Evaluating")
-        MIN_DEPTH = 1e-3
-        MAX_DEPTH = 150
-        
-        self.set_eval()
-        pred_depths = []
-        for batch_idx, inputs in enumerate(self.test_loader):
-            input_color = inputs[("color", 0, 0)].cuda()
-
-            if self.opt.post_process:
-                # Post-processed results require each image to have two forward passes
-                input_color = torch.cat((input_color, torch.flip(input_color, [3])), 0)
-
-            output = self.models["depth"](self.models["encoder"](input_color))
-            _, pred_depth = disp_to_depth(output[("disp", 0)], self.opt.min_depth, self.opt.max_depth)
-            pred_depth = pred_depth[:, 0].cpu().detach().numpy()
-            pred_depths.append(pred_depth)
-            
-        pred_depths = np.concatenate(pred_depths)
-        
-        errors = []
-        ratios = []
-        
-        for i in range(pred_depths.shape[0]):
-            gt_depth = self.gt_depths[i]
-            gt_height, gt_width = gt_depth.shape[:2]
-
-            pred_depth = pred_depths[i]
-            pred_depth = cv2.resize(pred_depth, (gt_width, gt_height))
-            
-            mask = np.logical_and(gt_depth > MIN_DEPTH, gt_depth < MAX_DEPTH)
-            pred_depth = pred_depth[mask]
-            gt_depth = gt_depth[mask]
-
-            pred_depth *= self.opt.pred_depth_scale_factor
-            # print(pred_depth.max(), pred_depth.min())
-            if not self.opt.disable_median_scaling:
-                ratio = np.median(gt_depth) / np.median(pred_depth)
-                ratios.append(ratio)
-                pred_depth *= ratio
-
-            pred_depth[pred_depth < MIN_DEPTH] = MIN_DEPTH
-            pred_depth[pred_depth > MAX_DEPTH] = MAX_DEPTH
-            
-            errors.append(compute_errors(gt_depth, pred_depth))
-        if not self.opt.disable_median_scaling:
-            ratios = np.array(ratios)
-            med = np.median(ratios)
-            print(" Scaling ratios | med: {:0.3f} | std: {:0.3f}".format(med, np.std(ratios / med)))
-
-        mean_errors = np.array(errors).mean(0)
-
-        writer = self.writers["train"]
-        for i in range(len(mean_errors)):
-            writer.add_scalar(self.depth_metric_names[i], mean_errors[i], self.epoch)
-        print("\n  " + ("{:>8} | " * 7).format("abs_rel", "sq_rel", "rmse", "rmse_log", "a1", "a2", "a3"))
-        print(("&{: 8.3f}  " * 7).format(*mean_errors.tolist()) + "\\\\")
-        
-        self.set_train()
-        
-        return mean_errors[2]
     def process_batch_0(self, inputs):
         """Pass a minibatch through the network and generate images and losses
         """
         for key, ipt in inputs.items():
+            if type(ipt) is list:
+                continue
             inputs[key] = ipt.to(self.device)
 
         outputs = {}
@@ -502,6 +433,8 @@ class Trainer:
         """Pass a minibatch through the network and generate images and losses
         """
         for key, ipt in inputs.items():
+            if type(ipt) is list:
+                continue
             inputs[key] = ipt.to(self.device)
 
         if self.opt.pose_model_type == "shared":
@@ -648,8 +581,19 @@ class Trainer:
                 outputs[("position_depth", scale, frame_id)] = self.position_depth[source_scale](
                         cam_points, inputs[("K", source_scale)], T)
 
-    def compute_reprojection_loss(self, pred, target):
+    def compute_reprojection_loss(self, pred, target, mask_path='/Users/aure/Documents/CARES/code/mono_reconstruction/data/zoom_masks/3.png'):
+        if mask_path:
+            # load png mask image
+            image = cv2.imread(mask_path)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            # convert img to mask
+            mask = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY)[1]
+            # get rid of small black holes
+            #kernel = np.zeroes((15,15),np.uint8)
+            #mask = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
 
+        # all areas outside mask should be set to 0 in predicted image
+        pred[mask==0]=0
         abs_diff = torch.abs(target - pred)
         l1_loss = abs_diff.mean(1, True)
 
@@ -687,11 +631,10 @@ class Trainer:
                 
                 loss_reprojection += (
                     self.compute_reprojection_loss(outputs[("color", frame_id, scale)], outputs[("refined", scale, frame_id)]) * occu_mask_backward).sum() / occu_mask_backward.sum()  
-                if frame_id > -2 and frame_id < 2:
-                    loss_transform += (
-                        torch.abs(outputs[("refined", scale, frame_id)] - outputs[("registration", 0, frame_id)].detach()).mean(1, True) * occu_mask_backward).sum() / occu_mask_backward.sum()
-                    loss_cvt += get_smooth_bright(
-                        outputs[("transform", "high", scale, frame_id)], inputs[("color", 0, 0)], outputs[("registration", scale, frame_id)].detach(), occu_mask_backward)
+                loss_transform += (
+                    torch.abs(outputs[("refined", scale, frame_id)] - outputs[("registration", 0, frame_id)].detach()).mean(1, True) * occu_mask_backward).sum() / occu_mask_backward.sum()
+                loss_cvt += get_smooth_bright(
+                    outputs[("transform", "high", scale, frame_id)], inputs[("color", 0, 0)], outputs[("registration", scale, frame_id)].detach(), occu_mask_backward)
 
             mean_disp = disp.mean(2, True).mean(3, True)
             norm_disp = disp / (mean_disp + 1e-7)
@@ -714,10 +657,10 @@ class Trainer:
         """
         self.set_eval()
         try:
-            inputs = next(self.val_iter)
+            inputs = self.val_iter.next()
         except StopIteration:
             self.val_iter = iter(self.val_loader)
-            inputs = next(self.val_iter)
+            inputs = self.val_iter.next()
 
         with torch.no_grad():
             outputs, losses = self.process_batch_val(inputs)
@@ -887,6 +830,3 @@ class Trainer:
             # self.model_optimizer.load_state_dict(optimizer_dict)
         # else:
         print("Adam is randomly initialized")
-        
-        #tensorboard --logdir='/mnt/data-hdd2/Beilei/Repository/AF-SfMLearner/logs/incredino/train'
-        #tensorboard --logdir='/mnt/data-hdd2/Beilei/Repository/AF-SfMLearner/logs/incredino/val'
