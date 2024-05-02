@@ -51,9 +51,7 @@ class MonoDataset(data.Dataset):
         # camera intrinsics- either load from path or pre-set intrinsics
         if len(camera_intrinsics_pth) > 0:
             self.K = np.loadtxt(camera_intrinsics_pth)
-            # TODO scale with original height and width
-            #self.K[0,:] /= width
-            #self.K[1,:] /= height
+            # normalising intrinsics
             self.K[0,:] /= self.K[0,2]
             self.K[1,:] /= self.K[1,2]
             # multiply by new h and w
@@ -62,10 +60,6 @@ class MonoDataset(data.Dataset):
 
 
         else:
-            """ self.K = np.array([[0.82, 0, 0.5, 0],
-                            [0, 1.02, 0.5, 0],
-                            [0, 0, 1, 0],
-                            [0, 0, 0, 1]], dtype=np.float64) """
             self.K =  np.array([[0.82, 0, 0.5],
                             [0, 1.02, 0.5],
                             [0, 0, 1]], dtype=np.float64)

@@ -33,7 +33,7 @@ class ResNetMultiImageInput(models.ResNet):
                 nn.init.constant_(m.bias, 0)
 
 
-def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
+def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1, weights_path=''):
     """Constructs a ResNet model.
     Args:
         num_layers (int): Number of resnet layers. Must be 18 or 50
@@ -50,6 +50,16 @@ def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
         loaded['conv1.weight'] = torch.cat(
             [loaded['conv1.weight']] * num_input_images, 1) / num_input_images
         model.load_state_dict(loaded)
+    
+    # load pretrained weights
+    if len(weights_path) > 0:
+        depth_encoder_dict = torch.load(weights_path)
+        model_dict = model.state_dict()
+        model.load_state_dict({k: v for k, v in depth_encoder_dict.items() if k in model_dict})
+
+
+
+        
     return model
 
 

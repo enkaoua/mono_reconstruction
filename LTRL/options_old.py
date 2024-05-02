@@ -15,32 +15,49 @@ class MonodepthOptions:
                                  type=str,
                                  help="path to the training data",
                                  default=os.path.join("data/rec_aug/august_recordings"))
+        self.parser.add_argument("--img_ext",
+                                 type=str,
+                                 help="image extension",
+                                 default=".png")      
         self.parser.add_argument("--log_dir",
                                  type=str,
                                  help="log directory",
                                  default=os.path.join(os.path.expanduser("~"), "tmp"))
-        self.parser.add_argument("--img_ext",
+        self.parser.add_argument("--mask_path", 
                                  type=str,
-                                 help="image extension",
-                                 default=".png")  
-        self.parser.add_argument("--mask_path",
-                                 type=str,
-                                 help="path to the masks",
-                                 default="/Users/aure/Documents/CARES/code/mono_reconstruction/data/zoom_masks/3.png")
-        # TRAINING options
+                                 help="path to the mask data",
+                                 default=os.path.join("data/mask"))
+        # EXTRA options
         self.parser.add_argument("--pretrained_path",
                                  type=str,
                                  help="pretrained weights path",
                                  default=os.path.join(file_dir, "LTRL/af-sfmlearner"))
         
+        self.parser.add_argument("--max_rank",
+                                 type=int,
+                                 help="the max target rank of final incremental matrices, i.e. the average number of singular values per matrix",
+                                 default=12)
+        self.parser.add_argument("--target_rank",
+                                 type=int,
+                                 help="the average target rank of final incremental matrices, i.e. the average number of singular values per matrix",
+                                 default=4)
+        self.parser.add_argument("--top_h",
+                                 type=int,
+                                 help="the number of selected modules per allocation",
+                                 default=2)
+        self.parser.add_argument("--advance_learn",
+                                 type=bool,
+                                 help="weither enable advance learning",
+                                 default=True)
+        # TRAINING options
         self.parser.add_argument("--model_name",
                                  type=str,
                                  help="the name of the folder to save the model in",
-                                 default="mdp")
+                                 default="incredino")
         self.parser.add_argument("--split",
                                  type=str,
                                  help="which training split to use",
-                                 choices=["endonasal","endovis", "eigen_zhou", "eigen_full", "odom", "benchmark"],
+                                 choices=["endovis", "eigen_zhou", "eigen_full", "odom", "benchmark", "endonasal"],
                                  default="endonasal")
         self.parser.add_argument("--num_layers",
                                  type=int,
@@ -51,7 +68,7 @@ class MonodepthOptions:
                                  type=str,
                                  help="dataset to train on",
                                  default="endonasal",
-                                 choices=["endonasal","endovis","endonasal", "kitti", "kitti_odom", "kitti_depth", "kitti_test"])
+                                 choices=["endovis", "kitti", "kitti_odom", "kitti_depth", "kitti_test", "endonasal"])
         self.parser.add_argument("--png",
                                  help="if set, trains from raw KITTI png files (instead of jpgs)",
                                  action="store_true")
@@ -111,7 +128,7 @@ class MonodepthOptions:
                                  nargs="+",
                                  type=int,
                                  help="frames to load",
-                                 default=[0, -1, 1])
+                                 default=[0, -1, 1, -2, 2])
 
         # OPTIMIZATION options
         self.parser.add_argument("--batch_size",
@@ -125,7 +142,7 @@ class MonodepthOptions:
         self.parser.add_argument("--num_epochs",
                                  type=int,
                                  help="number of epochs",
-                                 default=20)
+                                 default=50)
         self.parser.add_argument("--scheduler_step_size",
                                  type=int,
                                  help="step size of the scheduler",
@@ -181,8 +198,9 @@ class MonodepthOptions:
                                  nargs="+",
                                  type=str,
                                  help="models to load",
-                                 default=["pose_encoder", "pose", "encoder", "depth"])
-                                 #default=["encoder","depth", "position_encoder", "position", "transform_encoder", "transform", "pose"])
+                                 #default=["position_encoder", "position"]
+                                 default=["pose_encoder", "pose", "encoder", "depth"]
+                                 )
 
         # LOGGING options
         self.parser.add_argument("--log_frequency",
@@ -200,7 +218,8 @@ class MonodepthOptions:
                                  action="store_true")
         self.parser.add_argument("--eval_mono",
                                  help="if set evaluates in mono mode",
-                                 action="store_true")
+                                 action="store_true", 
+                                 default=True)
         self.parser.add_argument("--disable_median_scaling",
                                  help="if set disables median scaling in evaluation",
                                  action="store_true")
@@ -232,10 +251,6 @@ class MonodepthOptions:
                                  action="store_true")
         self.parser.add_argument("--eval_out_dir",
                                  help="if set will output the disparities to this folder",
-                                 type=str)
-        self.parser.add_argument("--recon_save_dir",
-                                 help="if set will output the disparities to this folder",
-                                 default="reconstructed_out",
                                  type=str)
         self.parser.add_argument("--post_process",
                                  help="if set will perform the flipping post processing "
