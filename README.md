@@ -11,11 +11,9 @@ python train_end_to_end.py --data_path <path/to/dataset> --log_dir  <path/to/out
 # download weights
 
 ```
-import gdown
-
-d3k4_url = 'https://drive.google.com/uc?id=1flCHG-6dZEUnjHukb8eWY4WSZCmPUa2P'
-gdown.download(d3k4_url,'d3k4.zip',quiet=True)
-!unzip -q d3k4.zip
+weights_url = 'https://drive.google.com/uc?id=1YIorWkIEgx_O052kfYq9mqmJJS-Z3BnH'
+gdown.download(weights_url,'af-sfmlearner.zip',quiet=True)
+!unzip -q af-sfmlearner.zip -d af-sfmlearner
 ```
 
 # download data

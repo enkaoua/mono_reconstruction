@@ -21,8 +21,10 @@ def reconstruct_pointcloud(rgb, depth, cam_K, vis_rgbd=False):
 
     rgb = np.asarray(rgb, order="C")
     rgb_im = o3d.geometry.Image(rgb.astype(np.uint8))
-    depth_im = o3d.geometry.Image(depth)
+    # TODO 
+    depth_im = o3d.geometry.Image(depth*1000)
     
+
     rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_im, depth_im, convert_rgb_to_intensity=False)
     if vis_rgbd:
         plt.subplot(1, 2, 1)
@@ -192,7 +194,11 @@ def evaluate_all(
 
             # reconstruct pointcloud
             rgb = input_data[0,0:3,:,:].squeeze().permute(1,2,0).cpu().numpy() * 255
-            pcd = reconstruct_pointcloud(rgb, predicted_depth, dataset.K, vis_rgbd=False)
+            #print(f'intrinsics ---------> {dataset.K}')
+            reconstruct_K = dataset.K 
+            #reconstruct_K[0,:] *= width/2
+            #reconstruct_K[1,:] *= height/2
+            pcd = reconstruct_pointcloud(rgb, predicted_depth, reconstruct_K, vis_rgbd=False)
 
             # save the results
             fn = os.path.join(save_dir, f'{i}.ply')
@@ -210,12 +216,13 @@ def evaluate_all(
 
 def main(): 
     evaluate_all(
-        data_path = '/Users/aure/Documents/CARES/code/mono_reconstruction/data/rec_aug/august_recordings/rec_10_endo', # path where data to be evaluated is stored
+        data_path = '/Users/aure/Documents/CARES/code/mono_reconstruction/data/rec_aug/august_recordings/rec_1_endo', # path where data to be evaluated is stored
+        img_ext = '.png',
         load_weights_folder="LTRL/af-sfmlearner", #name of model to load   
-        height=256, width=320, #input image height and width,
+        #height=256, width=320, #input image height and width,
+        height = 1280, width=1024,
         intrinsics_pth = '/Users/aure/Documents/CARES/code/mono_reconstruction/data/rec_aug/august_recordings/zoomed_calibration/intrinsics_endo.txt',
         #intrinsics_pth = '',
-        img_ext = '.png',
         num_dec = 8, # size of number in filename
 
         # eval
@@ -223,11 +230,25 @@ def main():
         num_workers = 1, # number of workers for dataloader
         num_layers = 18 ,# number of resnet layers", choices=[18, 34, 50, 101, 152]
         num_scales = 4, # number of scales to evaluate
+        frame_idxs = [0,1], # frame indices to evaluate on (current and one after)
 
         # save
-        save_dir = 'results/aug_10_scaling',
+        save_dir = 'results/aug_1',
+
+        # depth scaling
+        min_depth = 1e-3,
+        max_depth = 150,
+
+        visualise_depth = False,
     )
 
+        
+        
+        
+        
+        
+        
+       
     return 
 
 
