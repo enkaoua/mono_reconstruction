@@ -4,9 +4,12 @@ data/
 
 __pycache__/
 af-sfmlearner/
-
+cropped_video*/
+LTRL/cropped_video/
 results/
-
+trained_models/
 LTRL/splits/
 
 *.png
+
+*.egg*

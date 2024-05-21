@@ -1,0 +1,7 @@
+pillow
+tensorboardX
+torch
+torchvision
+scikit-image
+opencv-python
+six

@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from collections import OrderedDict
-from layers import *
+from LTRL.layers import *
 
 
 class TransformDecoder(nn.Module):
