@@ -29,7 +29,9 @@ class EndonasalDataset(data.Dataset):
                  num_scales,
                  is_train=False, 
                  img_ext='.png', 
-                 mask_path=''):
+                 mask_path='', 
+                 camera_intrinsics_pth='', 
+                 height_intrinsics=False):
         super(EndonasalDataset, self).__init__()
         
         self.filenames = []
@@ -41,16 +43,34 @@ class EndonasalDataset(data.Dataset):
             self.filenames.extend(frame_path)
         
         self.mask_path = mask_path
+        
         if len(self.mask_path)>0:
-            # load png mask image
+            """ # load png mask image
             mask_img = cv2.imread(self.mask_path)
             mask_img = cv2.cvtColor(mask_img, cv2.COLOR_BGR2GRAY)
             # convert img to mask
-            self.mask = cv2.threshold(mask_img, 127, 255, cv2.THRESH_BINARY)[1]
+            self.mask = cv2.threshold(mask_img, 127, 255, cv2.THRESH_BINARY)[1] """
+            mask_img = cv2.imread(self.mask_path)
+            # convert to grayscale and generate mask
+            gray = cv2.cvtColor(mask_img, cv2.COLOR_RGB2GRAY)
+            mask = np.zeros(gray.shape)
+            gray = np.array(gray, np.uint8)
+            # detect largest circle
+            circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 3, 100)
+            if circles is not None:
+                circles = np.round(circles[0, :]).astype("int")
+                (x, y, r) = circles[0:1][0]
+                print('circle found:',x, y, r-80)
+                cv2.circle(mask, (x, y), r-30, 255, -1)
+            self.mask = mask
+
+        # resize mask
+        self.resized_mask = cv2.resize(self.mask, (width, height), interpolation=cv2.INTER_NEAREST)
+        
         self.height = height
         self.width = width
         self.num_scales = num_scales
-        self.interp = Image.ANTIALIAS
+        self.interp = Image.LANCZOS
         self.frame_idxs = frame_idxs
         self.is_train = is_train
         self.to_tensor = transforms.ToTensor()
@@ -73,10 +93,35 @@ class EndonasalDataset(data.Dataset):
             self.resize[i] = transforms.Resize((self.height // s, self.width // s),
                                                interpolation=self.interp)
         self.load_depth = self.check_depth()
-        self.K = np.array([[0.76, 0, 0.47, 0],
+        
+        # camera intrinsics- either load from path or pre-set intrinsics
+        if len(camera_intrinsics_pth) > 0:
+            intrinsics = np.loadtxt(camera_intrinsics_pth, dtype=np.float32)
+            # normalising intrinsics
+            #self.K[0,:] /= 2*self.K[0,2]
+            #self.K[1,:] /= 2*self.K[1,2]
+            # multiply by new h and w
+            
+            if height_intrinsics:
+                intrinsics[0,:] /= 1920
+                intrinsics[1,:] /= 1080
+            else:
+                intrinsics[0,:] *= width/2
+                intrinsics[1,:] *= height/2
+            
+            self.K = np.eye(4, dtype=np.float32)
+            self.K [0:3,0:3] = intrinsics
+
+            print("--------> INTRINSICS", self.K)
+
+
+            
+
+        else:
+            self.K = np.array([[0.76, 0, 0.47, 0],
                            [0, 1.35, 0.45, 0],
                            [0, 0, 1, 0],
-                           [0, 0, 0, 1]], dtype=np.float32)    
+                           [0, 0, 0, 1]], dtype=np.float32)
 
     def __len__(self):
         return len(self.filenames)
@@ -100,25 +145,26 @@ class EndonasalDataset(data.Dataset):
             filename = "{:0>{width}}".format(frame_index + i, width=name_length)
             try:
                 img = Image.open(os.path.join(folderdir, filename+img_ext)).convert('RGB')
+                if len(self.mask_path)>0:
+                
+                    # resize mask to size of image
+                    #mask = cv2.resize(mask, (self.opt.height, self.opt.width))
+                    # make size of mask repeated to match batch and RGB (size 12, 3, x,y)
+
+                    #mask = np.tile(mask, (self.opt.batch_size, 3, 1, 1)).shape
+                    # convert img to np array
+                    img = np.array(img)
+                    # all areas outside mask should be set to 0 in predicted image
+                    img[self.mask==0]=0
+                    # convert back to PIL image
+                    img = Image.fromarray(img)
             except:
                 print(f'dataloader file name: {os.path.join(folderdir, filename+img_ext)}')
             if do_flip:
                 img = img.transpose(pil.FLIP_LEFT_RIGHT)
-
-            if len(self.mask_path)>0:
-                
-                # resize mask to size of image
-                #mask = cv2.resize(mask, (self.opt.height, self.opt.width))
-                # make size of mask repeated to match batch and RGB (size 12, 3, x,y)
-
-                #mask = np.tile(mask, (self.opt.batch_size, 3, 1, 1)).shape
-                # convert img to np array
-                img = np.array(img)
-                # all areas outside mask should be set to 0 in predicted image
-                img[self.mask==0]=0
-                # convert back to PIL image
-                img = Image.fromarray(img)
-
+            
+            
+            
             inputs[("color", i, -1)] = img
             
         if do_color_aug:

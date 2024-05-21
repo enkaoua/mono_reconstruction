@@ -2,6 +2,8 @@ from __future__ import absolute_import, division, print_function
 
 import time
 import json
+
+from tqdm import tqdm
 import datasets
 from datasets.endonasal_dataset import EndonasalDataset
 import networks
@@ -134,9 +136,9 @@ class Trainer:
             seqs_train = ['rec_1_endo', 'rec_2_endo', 'rec_10_endo', 'rec_8_endo', 'rec_9_endo']
             seqs_val = ['rec_3_endo', 'rec_11_endo']
             train_dataset = EndonasalDataset(
-                self.opt.data_path, seqs_train, self.opt.height, self.opt.width, self.opt.frame_ids, 4, is_train=True, img_ext=self.opt.img_ext, mask_path=self.opt.mask_path)
+                self.opt.data_path, seqs_train, self.opt.height, self.opt.width, self.opt.frame_ids, 4, is_train=True, img_ext=self.opt.img_ext, mask_path=self.opt.mask_path, camera_intrinsics_pth=self.opt.camera_intrinsics_pth, height_intrinsics=self.opt.height_intrinsics)
             val_dataset = EndonasalDataset(
-                self.opt.data_path, seqs_val, self.opt.height, self.opt.width, self.opt.frame_ids, 4, is_train=False, img_ext=self.opt.img_ext, mask_path=self.opt.mask_path)  
+                self.opt.data_path, seqs_val, self.opt.height, self.opt.width, self.opt.frame_ids, 4, is_train=False, img_ext=self.opt.img_ext, mask_path=self.opt.mask_path, camera_intrinsics_pth=self.opt.camera_intrinsics_pth, height_intrinsics=self.opt.height_intrinsics)  
             
             num_train_samples = len(train_dataset)
         else:
@@ -296,7 +298,7 @@ class Trainer:
 
         print("Training")
 
-        for batch_idx, inputs in enumerate(self.train_loader):
+        for batch_idx, inputs in enumerate(tqdm(self.train_loader)):
 
             before_op_time = time.time()
 
@@ -546,6 +548,11 @@ class Trainer:
 
             _, depth = disp_to_depth(disp, self.opt.min_depth, self.opt.max_depth)
 
+            """ # APPLY MASK TO DEPTH
+            if self.train_loader.dataset.mask_path:                
+                
+                depth[:,:,self.train_loader.dataset.resized_mask==0]=0 """
+
             outputs[("depth", 0, scale)] = depth
 
             source_scale = 0
@@ -584,10 +591,10 @@ class Trainer:
                 outputs[("position_depth", scale, frame_id)] = self.position_depth[source_scale](
                         cam_points, inputs[("K", source_scale)], T)
 
-    def compute_reprojection_loss(self, pred, target, mask_path='/Users/aure/Documents/CARES/code/mono_reconstruction/data/zoom_masks/3.png'):
-        if mask_path:
+    def compute_reprojection_loss(self, pred, target):
+        """ if self.opt.mask_path:
             # load png mask image
-            image = cv2.imread(mask_path)
+            image = cv2.imread(self.opt.mask_path)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             # convert img to mask
             mask = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY)[1]
@@ -598,11 +605,13 @@ class Trainer:
             mask = cv2.resize(mask, (self.opt.height, self.opt.width))
             # make size of mask repeated to match batch and RGB (size 12, 3, x,y)
 
-            mask = np.tile(mask, (self.opt.batch_size, 3, 1, 1)).shape
+            mask = np.tile(mask, (self.opt.batch_size, 3, 1, 1))
+            #print(mask.shape)
 
-        # all areas outside mask should be set to 0 in predicted image
-        pred[mask==0]=0
-        target[mask==0]=0
+            # all areas outside mask should be set to 0 in predicted image
+            pred[mask==0]=0
+            target[mask==0]=0 """
+        
         abs_diff = torch.abs(target - pred)
         l1_loss = abs_diff.mean(1, True)
 
